@@ -3,31 +3,19 @@
 
 GrainProcessor::GrainProcessor()
 {
-}
-
-void GrainProcessor::initialize(double sr)
-{
-    sampleRate = sr;
-    
     delayBufferWriteIndex = 0;
     delayBufferNumChannels = 2;
-    delayBufferSize = (int)(sampleRate * 5);
-    
+    delayBufferSize = 196000;
     delayBuffer = std::make_unique<juce::AudioBuffer<float>>(delayBufferNumChannels, delayBufferSize);
     delayBuffer->clear();
     
-    grainFrequency = 30;
-    globalGrainSize = (int)(sampleRate / grainFrequency * 2);
     samplesToNextGrain = 0;
-    globalGrainPanning = 0;
+    
 }
 
 void GrainProcessor::grainify(juce::AudioBuffer<float>& audioBuffer)
-{
+{    
     writeToDelayBuffer(audioBuffer);
-    
-
-        
     spawnGrains(audioBuffer);
     readFromGrains(audioBuffer);
 
@@ -51,33 +39,34 @@ void GrainProcessor::writeToDelayBuffer(juce::AudioBuffer<float>& audioBuffer)
             delayBuffer->copyFrom(channel, delayBufferWriteIndex, audioBuffer, channel, 0, samplesRemaining);
             delayBuffer->copyFrom(channel, 0, audioBuffer, channel, samplesRemaining, bufferSize - samplesRemaining);
         }
-        
     }
-    
 }
 
 void GrainProcessor::spawnGrains(juce::AudioBuffer<float>& audioBuffer)
 {
-//    std::cout<<"spawn"<<std::endl;
     int bufferSize = audioBuffer.getNumSamples();
     int bufferIndex = 0;
-    
+
     while (bufferSize > bufferIndex + samplesToNextGrain)
     {
         bufferIndex += samplesToNextGrain;
-        int startPosition = (delayBufferWriteIndex + bufferIndex) % delayBufferSize;
         
-//        std::cout<<"initializing grain with size "<<globalGrainSize<<" and position "<<startPosition<<std::endl;
-        Grain newGrain(globalGrainSize, globalGrainPanning, startPosition);
+        double randomDelay = randomizer.nextDouble() * grainSpread;
+        int startPosition = (delayBufferWriteIndex + bufferIndex) - (int)(randomDelay * sampleRate);
+        if (startPosition < 0)  { startPosition += delayBufferSize; }
+        startPosition %= delayBufferSize;
+    
+        double pan = grainWidth == 0 ? 0 : (randomizer.nextDouble() * 2 - 1) * grainWidth;
+        int size = (int) (std::max(0.1, std::min(1.0, globalGrainSize + (randomizer.nextDouble() - 0.5) * grainSizeRandom)) * sampleRate);  // grain size in terms of samples
+        
+        Grain newGrain(size, pan, startPosition, bufferIndex);
         grains.push_back(newGrain);
-//        std::cout<<"grain start position: "<<startPosition<<std::endl;
-//        std::cout<<grains.size()<<" grains"<<std::endl;
         
+        double grainFrequency = std::max(1.0, std::min(40.0, globalGrainFrequency + (randomizer.nextDouble() * 10 - 5) * grainFrequencyRandom));
         samplesToNextGrain = (int)(sampleRate / grainFrequency);
     }
     
     samplesToNextGrain = samplesToNextGrain - (bufferSize - bufferIndex);
-    
 }
 
 void GrainProcessor::readFromGrains(juce::AudioBuffer<float>& audioBuffer)
@@ -94,10 +83,8 @@ void GrainProcessor::readFromGrains(juce::AudioBuffer<float>& audioBuffer)
         
         int numSamplesRead = copyFromBufferWithWraparound(tempBuffer, *grain);
         
-//        applyPanning(tempBuffer, *grain);
+        applyPanning(tempBuffer, *grain);
         applyWindow(tempBuffer, *grain, numSamplesRead);
-        
-//        addFromTempBuffer(audioBuffer, tempBuffer);
         
         for (int channel = 0; channel < audioBuffer.getNumChannels(); channel++)
         {
@@ -109,7 +96,6 @@ void GrainProcessor::readFromGrains(juce::AudioBuffer<float>& audioBuffer)
         // check if grain is eaten
         if (grain->writeIndex >= grain->size)
         {
-//            std::cout<<"deleting grain"<<std::endl;
             grain = grains.erase(grain);
         }
         else
@@ -118,38 +104,6 @@ void GrainProcessor::readFromGrains(juce::AudioBuffer<float>& audioBuffer)
         }
     }
 }
-//
-//void GrainProcessor::fillWindow(Grain &grain)
-//{
-//    for (int i = 0; i < grain.size; ++i)
-//    {
-//        grain.window[i] = sin((float)i / grain.size * M_PI);
-//    }
-//}
-
-//Grain GrainProcessor::initGrain(int size, double panning, int startPosition)
-//{
-//    Grain newGrain;
-//
-//    newGrain.size = grainSize;
-//    newGrain.readIndex = startPosition;
-//    newGrain.writeIndex = 0;
-//    newGrain.panning = grainPanning;
-//
-//
-//    newGrain.window(grainSize, juce::dsp::WindowingFunction<float>::WindowingMethod::hann);
-////    windowingFunction.fillWindowingTables(newGrain.window, grainSize, windowingMethod);
-//
-//    return newGrain;
-//}
-
-//void GrainProcessor::addFromTempBuffer(juce::AudioBuffer<float>& audioBuffer, juce::AudioBuffer<float>& tempBuffer)
-//{
-//    for (int channel = 0; channel < audioBuffer.getNumChannels(); channel++)
-//    {
-//        audioBuffer.addFrom(channel, 0, tempBuffer, channel, 0, audioBuffer.getNumSamples());
-//    }
-//}
 
 int GrainProcessor::copyFromBufferWithWraparound(juce::AudioBuffer<float>& tempBuffer, Grain& grain)
 {
@@ -163,7 +117,6 @@ int GrainProcessor::copyFromBufferWithWraparound(juce::AudioBuffer<float>& tempB
         if (grain.readIndex + amountToCopy < delayBufferSize)
         {
             tempBuffer.copyFrom(channel, grainRelativeStartIndex, *delayBuffer, channel, grain.readIndex, amountToCopy);
-
         }
         else
         {
@@ -191,8 +144,6 @@ void GrainProcessor::applyPanning(juce::AudioBuffer<float>& tempBuffer, Grain& g
 
 void GrainProcessor::applyWindow(juce::AudioBuffer<float>& tempBuffer, Grain& grain, int numSamplesRead)
 {
-    
-    
     int grainRelativeStartIndex = getRelativeStartIndex(grain);
     
     for (int channel = 0; channel < tempBuffer.getNumChannels(); ++channel)
@@ -200,45 +151,16 @@ void GrainProcessor::applyWindow(juce::AudioBuffer<float>& tempBuffer, Grain& gr
         for (int i = 0; i < numSamplesRead; ++i)
         {
             int windowReadIndex = i + grain.writeIndex;
-//            if (windowReadIndex > grain.size)
-//            {
-//                std::cout<<"windowReadIndex: "<<windowReadIndex<<std::endl;
-//            }
-            
-            auto before = tempBuffer.getSample(channel, i + grainRelativeStartIndex);
-            auto after = tempBuffer.getSample(channel, i + grainRelativeStartIndex) * grain.window[windowReadIndex];
-            if (after > 1)
-            {
-                std::cout<<"sample before: "<<before<<std::endl;
-                std::cout<<"windowReadIndex: "<<windowReadIndex<<std::endl;
-                std::cout<<"Window: "<<grain.window[windowReadIndex]<<std::endl;
-                std::cout<<"sample after: "<<after<<std::endl;
-            }
-            *tempBuffer.getWritePointer(channel, i + grainRelativeStartIndex) = tempBuffer.getSample(channel, i + grainRelativeStartIndex) * grain.window[windowReadIndex];
 
+            *tempBuffer.getWritePointer(channel, i + grainRelativeStartIndex) = tempBuffer.getSample(channel, i + grainRelativeStartIndex) * grain.window[windowReadIndex];
         }
     }
 }
 
 void GrainProcessor::updateGrain(Grain& grain, int numSamplesWritten)
 {
-//    std::cout<<"Number of samples written: "<<numSamplesWritten<<std::endl;
     grain.readIndex = (grain.readIndex + numSamplesWritten) % delayBufferSize;
     grain.writeIndex += numSamplesWritten;
-//    std::cout<<"grain writeIndex is now "<<grain.writeIndex<<std::endl;
-}
-
-
-
-//int GrainProcessor::getDelayBufferIndexForGrain(int readIndex)
-//{
-//    return (delayBufferWriteIndex + readIndex) % delayBufferSize;
-//}
-
-
-void GrainProcessor::incrementBufferWriteIndex(int numSamples)
-{
-    delayBufferWriteIndex = (delayBufferWriteIndex + numSamples) % delayBufferSize;
 }
 
 int GrainProcessor::getRelativeStartIndex(Grain grain)
@@ -246,20 +168,29 @@ int GrainProcessor::getRelativeStartIndex(Grain grain)
     // If the grain is new, this returns where in the current buffer it starts
     if (grain.writeIndex == 0)
     {
-        int grainRelativeStartIndex = grain.readIndex - delayBufferWriteIndex;
-        return (grainRelativeStartIndex >= 0) ? grainRelativeStartIndex : grainRelativeStartIndex + delayBufferSize;
+        return grain.relativeStartIndex;
     }
     else
     {
         return 0;
     }
-    
 }
 
-void GrainProcessor::setSampleRate(double sr)
-{
-    sampleRate = sr;
-}
+void GrainProcessor::setSampleRate(double sr)                   { sampleRate = sr; }
+
+void GrainProcessor::setGrainSize(double grainSize)             { globalGrainSize = grainSize; }
+void GrainProcessor::setGrainFrequency(double grainFrequency)   { globalGrainFrequency = grainFrequency; }
+void GrainProcessor::setGrainWidth(double width)                { grainWidth = width; }
+void GrainProcessor::setGrainRandomSize(double randomAmount)    { grainSizeRandom = randomAmount; }
+void GrainProcessor::setGrainRandomFreq(double randomAmount)    { grainFrequencyRandom = randomAmount; }
+void GrainProcessor::setGrainSpread(double spreadMilliseconds)  { grainSpread = spreadMilliseconds / 1000; }
+
+double GrainProcessor::getGrainSize()                           { return globalGrainSize; }
+double GrainProcessor::getGrainFrequency()                      { return globalGrainFrequency; }
+double GrainProcessor::getGrainRandomSize()                     { return grainSizeRandom; }
+double GrainProcessor::getGrainRandomFreq()                     { return grainFrequencyRandom; }
+double GrainProcessor::getGrainWidth()                          { return grainWidth; }
+double GrainProcessor::getGrainSpread()                         { return grainSpread; }
 
 
 void GrainProcessor::testDelayBuffer(juce::AudioBuffer<float>& audioBuffer)

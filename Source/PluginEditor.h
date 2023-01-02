@@ -10,11 +10,12 @@
 
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
+#include "DualKnob.h"
 
 //==============================================================================
 /**
 */
-class ShatterAudioProcessorEditor  : public juce::AudioProcessorEditor
+class ShatterAudioProcessorEditor  :  public juce::AudioProcessorEditor, public juce::Slider::Listener
 {
 public:
     ShatterAudioProcessorEditor (ShatterAudioProcessor&);
@@ -23,11 +24,17 @@ public:
     //==============================================================================
     void paint (juce::Graphics&) override;
     void resized() override;
+        
+    void sliderValueChanged(juce::Slider* sliderChanged) override;
 
 private:
-    // This reference is provided as a quick way for your editor to
-    // access the processor object that created it.
     ShatterAudioProcessor& audioProcessor;
+
+    juce::Image background = juce::ImageCache::getFromMemory(BinaryData::particles_jpg, BinaryData::particles_jpgSize);
+    
+    DualKnob sizeKnobs;
+    DualKnob densityKnobs;
+    DualKnob widthAndSpreadKnobs;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ShatterAudioProcessorEditor)
 };

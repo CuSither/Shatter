@@ -19,7 +19,7 @@ ShatterAudioProcessor::ShatterAudioProcessor()
                       #endif
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                      #endif
-                       )
+                       ), grainMill(std::make_unique<GrainProcessor>()), apvts(*this, nullptr, "Parameters", initParameters())
 #endif
 {
 }
@@ -95,7 +95,9 @@ void ShatterAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBloc
 {
     // Use this method as the place to do any pre-playback
     // initialisation that you need..
-    grainMill.initialize(sampleRate);
+    grainMill->setSampleRate(sampleRate);
+    
+    
 }
 
 void ShatterAudioProcessor::releaseResources()
@@ -136,32 +138,17 @@ void ShatterAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    // In case we have more outputs than inputs, this code clears any output
-    // channels that didn't contain input data, (because these aren't
-    // guaranteed to be empty - they may contain garbage).
-    // This is here to avoid people getting screaming feedback
-    // when they first compile a plugin, but obviously you don't need to keep
-    // this code if your algorithm always overwrites all the output channels.
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
-
-    // This is the place where you'd normally do the guts of your plugin's
-    // audio processing...
-    // Make sure to reset the state if your inner loop is processing
-    // the samples and the outer loop is handling the channels.
-    // Alternatively, you can process the samples with the channels
-    // interleaved by keeping the same state.
-//    for (int channel = 0; channel < totalNumInputChannels; ++channel)
-//    {
-////        auto* channelData = buffer.getWritePointer (channel);
-//
-//        // ..do something to the data...
-////        grainMill.grainify(buffer);
-////        buffer.clear();
-//    }
     
-    grainMill.grainify(buffer);
-//    buffer.clear();
+    grainMill->setGrainSize(*apvts.getRawParameterValue("SIZE"));
+    grainMill->setGrainRandomSize(*apvts.getRawParameterValue("SIZERANDOM"));
+    grainMill->setGrainFrequency(*apvts.getRawParameterValue("DENSITY"));
+    grainMill->setGrainRandomFreq(*apvts.getRawParameterValue("DENSITYRANDOM"));
+    grainMill->setGrainWidth(*apvts.getRawParameterValue("WIDTH"));
+    grainMill->setGrainSpread(*apvts.getRawParameterValue("SPREAD"));
+   
+    grainMill->grainify(buffer);
 }
 
 //==============================================================================
@@ -178,20 +165,47 @@ juce::AudioProcessorEditor* ShatterAudioProcessor::createEditor()
 //==============================================================================
 void ShatterAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    // You should use this method to store your parameters in the memory block.
-    // You could do that either as raw data, or use the XML or ValueTree classes
-    // as intermediaries to make it easy to save and load complex data.
+    auto state = apvts.copyState();
+    std::unique_ptr<juce::XmlElement> xml (state.createXml());
+    copyXmlToBinary (*xml, destData);
+
 }
 
 void ShatterAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    // You should use this method to restore your parameters from this memory block,
-    // whose contents will have been created by the getStateInformation() call.
+    std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, sizeInBytes));
+    
+    if (xmlState.get() != nullptr)
+        if (xmlState->hasTagName (apvts.state.getType()))
+            apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
 }
 
-//==============================================================================
+//===========================================================================
 // This creates new instances of the plugin..
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new ShatterAudioProcessor();
+}
+
+juce::AudioProcessorValueTreeState::ParameterLayout ShatterAudioProcessor::initParameters()
+{
+    // initial parameter values
+    float initSize = 0.4f;
+    float initDensity = 5.0f;
+    float initRandom = 0.0f;
+    float initWidth = 0.0f;
+    float initSpread = 0.0f;
+    
+    parameters.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"SIZE", 1}, "Size", 0.05f, 2.0f, initSize));
+    parameters.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"SIZERANDOM", 1}, "Size Random", 0.0f, 1.0f, initRandom));
+    
+    parameters.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"DENSITY", 1}, "Density", 1.0f, 30.0f, initDensity));
+    parameters.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"DENSITYRANDOM", 1}, "Density Random", 0.0f, 1.0f, initRandom));
+    
+    parameters.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"WIDTH", 1}, "Width", 0.0f, 1.0f, initWidth));
+    juce::NormalisableRange<float> spreadRange = juce::NormalisableRange<float>(0.0f, 1000.0f, 1.0f);
+    spreadRange.setSkewForCentre(200.0);
+    parameters.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"SPREAD", 1}, "Spread", spreadRange, initSpread));
+       
+    return {parameters.begin(), parameters.end()};
 }

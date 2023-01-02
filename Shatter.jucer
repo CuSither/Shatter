@@ -4,6 +4,14 @@
               addUsingNamespaceToJuceHeader="0" displaySplashScreen="1" jucerFormatVersion="1">
   <MAINGROUP id="m8roFd" name="Shatter">
     <GROUP id="{EFEBA257-12BC-5DAF-D84B-275BEBB93D2B}" name="Source">
+      <GROUP id="{EA625B75-F6B0-6D82-0E60-B5D7AAF45FF3}" name="Components">
+        <FILE id="UjBD6X" name="CustomKnob.cpp" compile="1" resource="0" file="Source/CustomKnob.cpp"/>
+        <FILE id="GkjTnR" name="CustomKnob.h" compile="0" resource="0" file="Source/CustomKnob.h"/>
+        <FILE id="ikMn3j" name="DualKnob.cpp" compile="1" resource="0" file="Source/DualKnob.cpp"/>
+        <FILE id="LKPgSy" name="DualKnob.h" compile="0" resource="0" file="Source/DualKnob.h"/>
+        <FILE id="aCTD3E" name="particles.jpg" compile="0" resource="1" file="Source/particles.jpg"
+              xcodeResource="1"/>
+      </GROUP>
       <FILE id="jNIydH" name="GrainProcessor.cpp" compile="1" resource="0"
             file="Source/GrainProcessor.cpp"/>
       <FILE id="v6qjG9" name="GrainProcessor.h" compile="0" resource="0"
